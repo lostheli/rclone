@@ -837,9 +837,10 @@ func (f *Fs) Copy(ctx context.Context, src fs.Object, remote string) (fs.Object,
 	// Copy the object
 	var info api.FileResponse
 	p := params{
-		"fi_id":  srcObj.id,
-		"fi_pid": directoryID,
-		"force":  "y",
+		"fi_id":   srcObj.id,
+		"fi_pid":  directoryID,
+		"force":   "y",
+		"options": "allownoextension", // without this the filefabric adds extensions to files without
 	}
 	if f.canCopyWithName {
 		p["fi_name"] = f.opt.Enc.FromStandardName(leaf)
