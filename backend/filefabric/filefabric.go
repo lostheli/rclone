@@ -865,15 +865,58 @@ func (f *Fs) Purge(ctx context.Context, dir string) error {
 	return f.purgeCheck(ctx, dir, false)
 }
 
+// Wait for the the background task to complete if necessary
+func (f *Fs) waitForBackgroundTask(ctx context.Context, taskID string) (err error) {
+	if taskID == "" || taskID == "0" {
+		// No task to wait for
+		return nil
+	}
+	start := time.Now()
+	sleepTime := time.Second
+	for {
+		var info api.TasksResponse
+		_, err = f.rpc(ctx, "getUserBackgroundTasks", params{
+			"taskid": taskID,
+		}, &info, nil)
+		if err != nil {
+			return errors.Wrapf(err, "failed to wait for task %s to complete", taskID)
+		}
+		if len(info.Tasks) == 0 {
+			// task has finished
+			break
+		}
+		if len(info.Tasks) > 1 {
+			fs.Errorf(f, "Unexpected number of tasks returned %d", len(info.Tasks))
+		}
+		task := info.Tasks[0]
+		if task.BtStatus == "c" {
+			// task completed
+			break
+		}
+		dt := time.Since(start)
+		fs.Debugf(f, "Waiting for task ID %s: %s: to completed for %v - waited %v already", task.BtID, task.BtTitle, sleepTime, dt)
+		time.Sleep(sleepTime)
+	}
+	return nil
+}
+
 // Rename the leaf of a file or directory in a directory
-func (f *Fs) renameLeaf(ctx context.Context, id string, newLeaf string) (item *api.Item, err error) {
+func (f *Fs) renameLeaf(ctx context.Context, isDir bool, id string, newLeaf string) (item *api.Item, err error) {
 	var info api.FileResponse
-	_, err = f.rpc(ctx, "doRenameFile", params{
+	method := "doRenameFile"
+	if isDir {
+		method = "doRenameFolder"
+	}
+	_, err = f.rpc(ctx, method, params{
 		"fi_id":   id,
 		"fi_name": newLeaf,
 	}, &info, nil)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to rename leaf")
+	}
+	err = f.waitForBackgroundTask(ctx, info.Status.TaskID)
+	if err != nil {
+		return nil, err
 	}
 	return &info.Item, nil
 }
@@ -883,7 +926,7 @@ func (f *Fs) renameLeaf(ctx context.Context, id string, newLeaf string) (item *a
 // This is complicated by the fact that there is an API to move files
 // between directories and a separate one to rename them.  We try to
 // call the minimum number of API calls.
-func (f *Fs) move(ctx context.Context, id, oldLeaf, newLeaf, oldDirectoryID, newDirectoryID string) (item *api.Item, err error) {
+func (f *Fs) move(ctx context.Context, isDir bool, id, oldLeaf, newLeaf, oldDirectoryID, newDirectoryID string) (item *api.Item, err error) {
 	newLeaf = f.opt.Enc.FromStandardName(newLeaf)
 	oldLeaf = f.opt.Enc.FromStandardName(oldLeaf)
 	doRenameLeaf := oldLeaf != newLeaf
@@ -894,7 +937,7 @@ func (f *Fs) move(ctx context.Context, id, oldLeaf, newLeaf, oldDirectoryID, new
 	// in the destination directory by accident
 	if doRenameLeaf && doMove {
 		tmpLeaf := newLeaf + "." + random.String(8)
-		item, err = f.renameLeaf(ctx, id, tmpLeaf)
+		item, err = f.renameLeaf(ctx, isDir, id, tmpLeaf)
 		if err != nil {
 			return nil, err
 		}
@@ -904,7 +947,11 @@ func (f *Fs) move(ctx context.Context, id, oldLeaf, newLeaf, oldDirectoryID, new
 	// if required
 	if doMove {
 		var info api.MoveFilesResponse
-		_, err = f.rpc(ctx, "doMoveFiles", params{
+		method := "doMoveFiles"
+		if isDir {
+			method = "doMoveFolders"
+		}
+		_, err = f.rpc(ctx, method, params{
 			"fi_ids": id,
 			"dir_id": newDirectoryID,
 		}, &info, nil)
@@ -912,11 +959,15 @@ func (f *Fs) move(ctx context.Context, id, oldLeaf, newLeaf, oldDirectoryID, new
 			return nil, errors.Wrap(err, "failed to move file to new directory")
 		}
 		item = &info.Item
+		err = f.waitForBackgroundTask(ctx, info.Status.TaskID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Rename the leaf to its final name if required
 	if doRenameLeaf {
-		item, err = f.renameLeaf(ctx, id, newLeaf)
+		item, err = f.renameLeaf(ctx, isDir, id, newLeaf)
 		if err != nil {
 			return nil, err
 		}
@@ -954,7 +1005,7 @@ func (f *Fs) Move(ctx context.Context, src fs.Object, remote string) (fs.Object,
 	}
 
 	// Do the move
-	item, err := f.move(ctx, srcObj.id, srcLeaf, dstLeaf, srcDirectoryID, dstDirectoryID)
+	item, err := f.move(ctx, false, srcObj.id, srcLeaf, dstLeaf, srcDirectoryID, dstDirectoryID)
 	if err != nil {
 		return nil, err
 	}
@@ -995,7 +1046,7 @@ func (f *Fs) DirMove(ctx context.Context, src fs.Fs, srcRemote, dstRemote string
 	}
 
 	// Do the move
-	_, err = f.move(ctx, srcID, srcLeaf, dstLeaf, srcDirectoryID, dstDirectoryID)
+	_, err = f.move(ctx, true, srcID, srcLeaf, dstLeaf, srcDirectoryID, dstDirectoryID)
 	if err != nil {
 		return err
 	}

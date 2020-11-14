@@ -55,6 +55,7 @@ func (t Time) String() string {
 type Status struct {
 	Code    string `json:"status"`
 	Message string `json:"statusmessage"`
+	TaskID  string `json:"taskid"`
 	// Warning string `json:"warning"` // obsolete
 }
 
@@ -342,4 +343,49 @@ type MoveFilesResponse struct {
 	DirID             string   `json:"dir_id"`
 	MovedObjects      []Item   `json:"movedobjects"`
 	// FolderTasks       []interface{}  `json:"foldertasks"`
+}
+
+// TasksResponse is the response to getUserBackgroundTasks
+type TasksResponse struct {
+	Status
+	Tasks []Task `json:"tasks"`
+	Total string `json:"total"`
+}
+
+// BtData is part of TasksResponse
+type BtData struct {
+	Callback string `json:"callback"`
+}
+
+// Task describes a task returned in TasksResponse
+type Task struct {
+	BtID             string `json:"bt_id"`
+	UsID             string `json:"us_id"`
+	BtType           string `json:"bt_type"`
+	BtData           BtData `json:"bt_data"`
+	BtStatustext     string `json:"bt_statustext"`
+	BtStatusdata     string `json:"bt_statusdata"`
+	BtMessage        string `json:"bt_message"`
+	BtProcent        string `json:"bt_procent"`
+	BtAdded          string `json:"bt_added"`
+	BtStatus         string `json:"bt_status"`
+	BtCompleted      string `json:"bt_completed"`
+	BtTitle          string `json:"bt_title"`
+	BtCredentials    string `json:"bt_credentials"`
+	BtHidden         string `json:"bt_hidden"`
+	BtAutoremove     string `json:"bt_autoremove"`
+	BtDevsite        string `json:"bt_devsite"`
+	BtPriority       string `json:"bt_priority"`
+	BtReport         string `json:"bt_report"`
+	BtSitemarker     string `json:"bt_sitemarker"`
+	BtExecuteafter   string `json:"bt_executeafter"`
+	BtCompletestatus string `json:"bt_completestatus"`
+	BtSubtype        string `json:"bt_subtype"`
+	BtCanceled       string `json:"bt_canceled"`
+	Callback         string `json:"callback"`
+	CanBeCanceled    bool   `json:"canbecanceled"`
+	CanBeRestarted   bool   `json:"canberestarted"`
+	Type             string `json:"type"`
+	Status           string `json:"status"`
+	Settings         string `json:"settings"`
 }
